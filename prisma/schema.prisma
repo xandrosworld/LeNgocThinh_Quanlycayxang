@@ -1,0 +1,188 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  EMPLOYEE
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum DebtTransactionType {
+  NEW_DEBT
+  PAYMENT
+}
+
+model User {
+  id          String   @id @default(cuid())
+  username    String   @unique
+  password    String
+  displayName String
+  role        Role     @default(EMPLOYEE)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shifts      Shift[]
+  fuelImports FuelImport[]
+}
+
+model FuelType {
+  id        String   @id @default(cuid())
+  code      String   @unique // D1, E10, DS
+  name      String   // Dầu DO, Xăng E10, Dầu DS/D5
+  sellPrice Float    @default(0)
+  costPrice Float    @default(0)
+  discount  Float    @default(0) // chiết khấu/lít
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pumps            Pump[]
+  tanks            Tank[]
+  pumpReadings     PumpReading[]
+  debtTransactions DebtTransaction[]
+  fuelImports      FuelImport[]
+}
+
+model Pump {
+  id           String   @id @default(cuid())
+  number       Int      // 1-4
+  name         String   // Vòi 1, Vòi 2...
+  fuelTypeId   String
+  currentMeter Float    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  fuelType     FuelType      @relation(fields: [fuelTypeId], references: [id])
+  pumpReadings PumpReading[]
+}
+
+model Tank {
+  id               String   @id @default(cuid())
+  name             String   // Bồn D1, Bồn E10, Bồn DS
+  fuelTypeId       String
+  maxCapacity      Float    @default(10000) // lít
+  currentVolume    Float    @default(0)     // lít hiện tại
+  warningLow       Float    @default(30)    // % cảnh báo thấp
+  warningCritical  Float    @default(10)    // % cảnh báo nguy hiểm
+  warningHigh      Float    @default(90)    // % cảnh báo gần đầy
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  fuelType FuelType @relation(fields: [fuelTypeId], references: [id])
+}
+
+model Shift {
+  id         String      @id @default(cuid())
+  shiftDate  DateTime    // ngày ca
+  startTime  DateTime    // giờ bắt đầu
+  endTime    DateTime?   // giờ kết thúc
+  employeeId String
+  status     ShiftStatus @default(OPEN)
+  note       String?
+
+  // Thu tiền trong ca
+  otherRevenue           Float @default(0) // doanh thu khác (keo ron...)
+  cashReceived           Float @default(0) // tiền mặt thực nhận
+  bankTransferPersonal   Float @default(0) // CK khách lẻ
+  bankTransferBusiness   Float @default(0) // CK doanh nghiệp
+  debtPaymentReceived    Float @default(0) // khách trả nợ
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee         User              @relation(fields: [employeeId], references: [id])
+  pumpReadings     PumpReading[]
+  debtTransactions DebtTransaction[]
+  expenses         Expense[]
+}
+
+model PumpReading {
+  id           String @id @default(cuid())
+  shiftId      String
+  pumpId       String
+  fuelTypeId   String
+  startReading Float  @default(0) // số đầu
+  endReading   Float  @default(0) // số cuối
+  unitPrice    Float  @default(0) // đơn giá
+
+  createdAt DateTime @default(now())
+
+  shift    Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  pump     Pump     @relation(fields: [pumpId], references: [id])
+  fuelType FuelType @relation(fields: [fuelTypeId], references: [id])
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  name        String
+  phone       String?
+  debtLimit   Float    @default(50000000) // hạn mức nợ mặc định 50tr
+  currentDebt Float    @default(0)
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  transactions DebtTransaction[]
+}
+
+model DebtTransaction {
+  id         String               @id @default(cuid())
+  customerId String
+  shiftId    String?
+  type       DebtTransactionType
+  fuelTypeId String?
+  amount     Float                // số tiền
+  note       String?
+  createdAt  DateTime             @default(now())
+
+  customer Customer  @relation(fields: [customerId], references: [id])
+  shift    Shift?    @relation(fields: [shiftId], references: [id])
+  fuelType FuelType? @relation(fields: [fuelTypeId], references: [id])
+}
+
+model FuelImport {
+  id           String   @id @default(cuid())
+  fuelTypeId   String
+  quantity     Float    // số lít
+  unitPrice    Float    // đơn giá nhập
+  licensePlate String?  // biển số xe
+  driverName   String?  // tên tài xế
+  supplier     String?  // nhà cung cấp
+  importDate   DateTime @default(now())
+  note         String?
+  createdById  String
+
+  createdAt DateTime @default(now())
+
+  fuelType  FuelType @relation(fields: [fuelTypeId], references: [id])
+  createdBy User     @relation(fields: [createdById], references: [id])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  shiftId     String?
+  description String   // nội dung chi
+  amount      Float    // số tiền
+  paidBy      String?  // người chi
+  recipient   String?  // người nhận
+  note        String?
+  createdAt   DateTime @default(now())
+
+  shift Shift? @relation(fields: [shiftId], references: [id])
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
